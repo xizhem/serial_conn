@@ -5,7 +5,7 @@ from PrintLines import PrintLines
 from DebuggerInter import DebuggerInter
 import time
 
-PORT   = "COM3"
+PORT    = "COM3"
 PORT_L  = "loop://"
 BAUD    = 115200
 BYTE_S  = 8
