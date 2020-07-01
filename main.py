@@ -11,6 +11,7 @@ BAUD    = 115200
 BYTE_S  = 8
 PARITY  = serial.PARITY_NONE
 STOPBIT = 2
+RESPONSE_TIME = 10
 
 loop = serial.serial_for_url(PORT_L, BAUD, BYTE_S, PARITY, STOPBIT, timeout = 1)
 #pc = serial.Serial(PORT, BAUD, BYTE_S, PARITY, STOPBIT, timeout = 1)
@@ -22,14 +23,18 @@ debugger_inter = DebuggerInter(reader_thread)
 
 #exit {with..as..} block will close the readerThread
 with reader_thread as protocol:
-    # a worker thread to update input data to TKINTER
+    # a worker thread to update input data to TKINTER (midpoint connection between Tkiner and Pyserial)
     def worker(p, d):
         print("worker thread running")
         #object with flag "do_run " to let outside kill the thread
         t = threading.currentThread()
         while getattr(t, "do_run", True):
-            if(p.is_ready() is True):
+            if p.is_ready():
+                d.timing_stop()
                 d.update_rx_text(p.get_data())
+            if d.TIMING and d.response_elapsed() > 10:
+                print("warned")
+                d.response_overtime_warning()
             time.sleep(0.1)
         print("worker thread closed")
         return
@@ -39,6 +44,7 @@ with reader_thread as protocol:
 
     #start the UI loop
     debugger_inter.start()
+    #kill worker thread
     t.do_run = False
     t.join()
 

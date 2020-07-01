@@ -17,7 +17,6 @@ class PrintLines(serial.threaded.LineReader):
     def handle_line(self, data):
         sys.stdout.write('line received: {}\n'.format(repr(data)))
         self.input_q.put(data)
-        print("handled", list(self.input_q.queue))
 
     def connection_lost(self, exc):
         if exc:
