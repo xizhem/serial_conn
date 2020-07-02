@@ -1,0 +1,51 @@
+17:37:57 INFO: port opened
+
+17:37:57 INFO: worker thread running
+17:38:02 INFO: Successfully sent Byte: 00
+17:38:02 INFO: Line received: 00
+
+17:38:02 INFO: Sent Data Packet Overview: 00
+17:38:06 INFO: Sent Data Packet Overview: 
+17:38:08 INFO: Successfully sent Byte: 12
+17:38:08 INFO: Line received: 12
+
+17:38:08 INFO: Sent Data Packet Overview: 12
+17:38:10 INFO: Successfully sent Byte: 1223
+17:38:10 INFO: Line received: 12
+
+17:38:10 INFO: Line received: 23
+
+17:38:10 INFO: Sent Data Packet Overview: 1223
+17:38:12 INFO: Successfully sent Byte: 122334
+17:38:12 INFO: Line received: 12
+
+17:38:12 INFO: Line received: 23
+
+17:38:12 INFO: Line received: 34
+
+17:38:12 INFO: Sent Data Packet Overview: 122334
+17:38:14 INFO: Successfully sent Byte: 12233456
+17:38:14 INFO: Line received: 12
+
+17:38:14 INFO: Line received: 23
+
+17:38:14 INFO: Line received: 34
+
+17:38:14 INFO: Line received: 56
+
+17:38:14 INFO: Sent Data Packet Overview: 12233456
+17:38:16 INFO: Successfully sent Byte: 1223345678
+17:38:16 INFO: Line received: 12
+
+17:38:16 INFO: Line received: 23
+
+17:38:16 INFO: Line received: 34
+
+17:38:16 INFO: Line received: 56
+
+17:38:16 INFO: Sent Data Packet Overview: 1223345678
+17:38:16 INFO: Line received: 78
+
+17:39:14 INFO: worker thread closed
+17:39:14 INFO: port closed
+

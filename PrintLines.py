@@ -2,6 +2,7 @@ import queue
 import serial.threaded
 import traceback
 import sys
+import logging
 
 #thread protocols
 class PrintLines(serial.threaded.LineReader):
@@ -12,16 +13,16 @@ class PrintLines(serial.threaded.LineReader):
 
     def connection_made(self, transport):
         super(PrintLines, self).connection_made(transport)
-        sys.stdout.write('port opened\n')
+        logging.info('port opened\n')
 
     def handle_line(self, data):
-        sys.stdout.write('line received: {}\n'.format(repr(data)))
+        logging.info('Line received: {}\n'.format(data.hex()))
         self.input_q.put(data)
 
     def connection_lost(self, exc):
         if exc:
-            traceback.print_exc(exc)
-        sys.stdout.write('port closed\n')
+            traceback.print_exc()
+        logging.info('port closed\n')
 
     def is_ready(self):
         return not self.input_q.empty()

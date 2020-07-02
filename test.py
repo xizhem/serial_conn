@@ -1,5 +1,6 @@
 import serial
 import time
+import unittest
 
 """open another terminal and run this script serve as a virual COM and test"""
 

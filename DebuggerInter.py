@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import scrolledtext
 import time
+import logging
+import os
 
 DROP_DOWN_MENU = {
 "DUMP MEMORY": b'\x00',
@@ -9,16 +11,36 @@ DROP_DOWN_MENU = {
 "READ LOWER BYTE": b'\xE0'  #0xE-
 }
 
+
+
 class DebuggerInter():
-    def __init__(self, serial_handle):
+    def __init__(self, serial_handle, log_name):
         self.serial_handle = serial_handle
         self.rx_byteCount = 0
         self.response_start_time = 0
         self.TIMING = False
+        self.byte_buffer = []
+        self.BYTES_CAP = 0   #64bit(8 Bytes) for adderss
+        self.BYTES_COUNTER = 0
 
         #tkinter setup
         self.main_frame = tk.Tk()
         self.main_frame.title("UART Debugger Console")
+
+        #top menu bar
+        self.menubar = tk.Menu(self.main_frame)
+        self.main_frame.config(menu = self.menubar)
+
+        self.backlog_menu = tk.Menu(self.menubar, tearoff = 0)
+        self.menubar.add_cascade(label = "Backlog", menu = self.backlog_menu)
+        self.backlog_menu.add_command(label = "Open Backlog", command = lambda: os.startfile(log_name))
+
+        self.help_menu = tk.Menu(self.menubar, tearoff = 0)
+        self.menubar.add_cascade(label = "Help", menu = self.help_menu)
+        self.help_menu.add_command(label = "NO HELP")
+
+
+
 
         #receive box
         self.rx_console = tk.LabelFrame(self.main_frame, text = "Receive Data", padx=5, pady=10)
@@ -42,10 +64,13 @@ class DebuggerInter():
         self.command_var = tk.StringVar(value = "Choose a Command")
         #dropdown callback
         def onChange_dropdown(*args):
-            self.entry_box.configure(state = "normal")
             command = self.command_var.get()
             if (command == "DUMP MEMORY") or (command == "READ LOWER BYTE"):
                 self.entry_box.configure(state = "disabled")
+                self.BYTES_CAP = 1
+            else:
+                self.entry_box.configure(state = "normal")
+                self.BYTES_CAP = 8
         self.command_var.trace("w", onChange_dropdown)
 
         self.drop_down = tk.OptionMenu(
@@ -80,28 +105,34 @@ class DebuggerInter():
                 command = command.strip() #delete trailing newlines and whitespaces
                 try:
                     byteToSend = bytes.fromhex(command)
-                    print(byteToSend)
-                    print("#Bytes sent: ", self.send(byteToSend))
+                    self.send(byteToSend)
                 except ValueError as e:
                     #echo error to the Console
                     self.tx_text.delete('1.0', "end")
-                    self.tx_text.insert('1.0', e)
+                    self.tx_text.insert('1.0', e, "warning")
+                    logging.warning("Transimtted Address/Data has format error")
             #prepare rx console for upcoming rx data
             self.clear()
+            bytes_in_str = ' '.join(self.byte_buffer)
+            if len(bytes_in_str):
+                logging.info("Sent Data Packet Overview: {}".format(bytes_in_str))
+                self.byte_buffer.clear()
 
         #"apply" button onClick callback
         def processApplyButton():
             command = self.command_var.get()
-            if command == "Choose a Command":
+            if command == "Choose a Command" or command not in DROP_DOWN_MENU:
                 return
-
             byte_template = DROP_DOWN_MENU[command]
+
+            #prepare tx/rx console for upcoming rx data
+            self.clear()
             self.tx_text.delete('1.0', "end")
 
+            bytes_in_str = ''
             if (command == "DUMP MEMORY") or (command == "READ LOWER BYTE"):
-                self.tx_text.insert('1.0', byte_template.hex())
-                self.send(byte_template)
-                self.clear()
+                result_byte = byte_template
+                self.send(result_byte)
             elif (command == "LOAD ADDRESS") or (command == "LOAD DATA"):
                 address = self.entry_box_var.get()
                 #parse the address
@@ -109,12 +140,12 @@ class DebuggerInter():
                     self.tx_text.insert('1.0', "Please Check the Address/Data Format", "warning")
                 else:
                     for bit in address:
-                        result_byte = bytes([int(bit) | byte_template[0]]) #ORing operation
-                        self.tx_text.insert('end', result_byte.hex() + ' ')
+                        result_byte = bytes([int(bit, 16) | byte_template[0]]) #ORing operation
                         self.send(result_byte)
-                        self.clear()
-
-
+            bytes_in_str = ' '.join(self.byte_buffer)
+            self.tx_text.insert('end', bytes_in_str)
+            logging.info("Sent Data Packet Overview: {}".format(bytes_in_str))
+            self.byte_buffer.clear()
 
         #resizing factor  (uesless for now)
         self.main_frame.columnconfigure(1, weight=1)
@@ -143,9 +174,19 @@ class DebuggerInter():
             self.rx_byteCount += 1
 
     def send(self, byteToSend):
-        self.response_start_time = time.perf_counter()
-        self.timing_begin()
-        return self.serial_handle.serial.write(byteToSend)
+        """send ONE byte at a time, in case when byteToSend is a sequence
+           serial.write() will chop the sequence and send ONE byte at a time"""
+        #record onset time of first byte sent to FPGA
+        if not self.TIMING:
+            self.response_start_time = time.perf_counter()
+            self.timing_begin()
+        result = self.serial_handle.serial.write(byteToSend)
+        if result >= 1:
+            logging.info("Successfully sent Byte: {}".format(byteToSend.hex()))
+            self.byte_buffer.append(byteToSend.hex())
+        else:
+            logging.warning("Failed to sent Byte: {}".format(byteToSend.hex()))
+        return result
 
     def clear(self):
         #prepare/clear rx console
