@@ -32,9 +32,12 @@ with reader_thread as protocol:
             if p.is_ready():
                 d.timing_stop()
                 d.update_rx_text(p.get_data())
+
             if d.TIMING and d.response_elapsed() > 10:
                 print("warned")
                 d.response_overtime_warning()
+                d.timing_stop()
+
             time.sleep(0.1)
         print("worker thread closed")
         return
@@ -47,11 +50,3 @@ with reader_thread as protocol:
     #kill worker thread
     t.do_run = False
     t.join()
-
-
-"""
-except Exception as e:
-    pc.close()
-    raise e
-"""
-#clean up

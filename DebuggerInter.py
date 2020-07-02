@@ -6,7 +6,7 @@ DROP_DOWN_MENU = {
 "DUMP MEMORY": b'\x00',
 "LOAD ADDRESS": b'\x20',      #0x2-
 "LOAD DATA": b'\x40',         #0x4-
-"READ LOWER 4 Bits": b'\x00' #unclear
+"READ LOWER BYTE": b'\xE0'  #0xE-
 }
 
 class DebuggerInter():
@@ -44,7 +44,7 @@ class DebuggerInter():
         def onChange_dropdown(*args):
             self.entry_box.configure(state = "normal")
             command = self.command_var.get()
-            if command == "DUMP MEMORY":
+            if (command == "DUMP MEMORY") or (command == "READ LOWER BYTE"):
                 self.entry_box.configure(state = "disabled")
         self.command_var.trace("w", onChange_dropdown)
 
@@ -96,14 +96,13 @@ class DebuggerInter():
                 return
 
             byte_template = DROP_DOWN_MENU[command]
+            self.tx_text.delete('1.0', "end")
 
-            if command == "DUMP MEMORY":
-                self.tx_text.delete('1.0', "end")
+            if (command == "DUMP MEMORY") or (command == "READ LOWER BYTE"):
                 self.tx_text.insert('1.0', byte_template.hex())
                 self.send(byte_template)
                 self.clear()
-            elif command == "LOAD ADDRESS" or "LOAD DATA":
-                self.tx_text.delete('1.0', "end")
+            elif (command == "LOAD ADDRESS") or (command == "LOAD DATA"):
                 address = self.entry_box_var.get()
                 #parse the address
                 if not len(address) == 8:
@@ -114,6 +113,8 @@ class DebuggerInter():
                         self.tx_text.insert('end', result_byte.hex() + ' ')
                         self.send(result_byte)
                         self.clear()
+
+
 
         #resizing factor  (uesless for now)
         self.main_frame.columnconfigure(1, weight=1)
