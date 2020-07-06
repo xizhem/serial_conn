@@ -20,7 +20,6 @@ class DebuggerInter():
         self.response_start_time = 0
         self.TIMING = False
         self.byte_buffer = []
-        self.BYTES_CAP = 0   #64bit(8 Bytes) for adderss
         self.BYTES_COUNTER = 0
 
         #tkinter setup
@@ -44,21 +43,21 @@ class DebuggerInter():
 
         #receive box
         self.rx_console = tk.LabelFrame(self.main_frame, text = "Receive Data", padx=5, pady=10)
-        self.rx_console.grid(row = 1, column = 1)
+        self.rx_console.grid(row = 0, column = 0, sticky = "NSEW")
         self.rx_text = scrolledtext.ScrolledText(self.rx_console, state = "disabled")
-        self.rx_text.grid(row = 1, column = 1)
+        self.rx_text.grid(row = 0, column = 0, sticky = "NSEW")
         self.rx_text.tag_config("warning", foreground = "red")
 
         #transimit box
         self.tx_console = tk.LabelFrame(self.main_frame, text = "Transmit Data", padx=5, pady=10)
-        self.tx_console.grid(row = 2, column = 1)
+        self.tx_console.grid(row = 1, column = 0, sticky = "NSEW")
         self.tx_text = scrolledtext.ScrolledText(self.tx_console)
-        self.tx_text.grid(row = 1, column = 1)
+        self.tx_text.grid(row = 0, column = 0, sticky = "NSEW")
         self.tx_text.tag_config('warning', foreground = 'red')
 
         #bottom widges block
-        self.bot_widget_frame = tk.Frame(self.tx_console)
-        self.bot_widget_frame.grid(row = 2, column = 1, pady = 5)
+        self.command_frame = tk.Frame(self.tx_console)
+        self.command_frame.grid(row = 1, column = 0, pady = 5, sticky = "NSEW")
 
         #dropdown
         self.command_var = tk.StringVar(value = "Choose a Command")
@@ -67,97 +66,100 @@ class DebuggerInter():
             command = self.command_var.get()
             if (command == "DUMP MEMORY") or (command == "READ LOWER BYTE"):
                 self.entry_box.configure(state = "disabled")
-                self.BYTES_CAP = 1
             else:
                 self.entry_box.configure(state = "normal")
-                self.BYTES_CAP = 8
         self.command_var.trace("w", onChange_dropdown)
 
         self.drop_down = tk.OptionMenu(
-                        self.bot_widget_frame,
+                        self.command_frame,
                         self.command_var,
                         *DROP_DOWN_MENU.keys())
-        self.drop_down.grid(row = 1, column = 1, sticky = "W", padx = 5)
+        self.drop_down.configure(bg = "light grey")
+        self.drop_down.grid(row = 0, column = 0)
 
         #entry box
         self.entry_box_var = tk.StringVar()
-        self.entry_box = tk.Entry(self.bot_widget_frame, textvariable = self.entry_box_var)
-        self.entry_box.grid(row = 1, column = 2, ipadx = 60, padx = 35)
+        self.entry_box = tk.Entry(self.command_frame, textvariable = self.entry_box_var)
+        self.entry_box.grid(row = 0, column = 1, ipadx = 60, padx = 15, sticky = "NSEW")
 
-        self.tx_apply_button = tk.Button(self.bot_widget_frame, text = "APPLY", command = lambda: processApplyButton())
-        self.tx_apply_button.grid(row = 1, column = 3, sticky = "E", padx = 5, ipadx = 10)
+        self.tx_apply_button = tk.Button(self.command_frame, text = "APPLY",bg = "light grey", command = lambda: self.processApplyButton())
+        self.tx_apply_button.grid(row = 0, column = 1, padx = 15, ipadx = 10, sticky = "E")
 
-        self.tx_send_button = tk.Button(self.bot_widget_frame, text = "SEND", command = lambda: processSendButton())
-        self.tx_send_button.grid(row = 2, column = 2, sticky = "W", pady = 15, padx = 60, ipadx = 40)
+        self.tx_send_button = tk.Button(self.tx_console, text = "SEND", bg="light blue", command = lambda: self.processSendButton())
+        self.tx_send_button.grid(row = 2, column = 0, pady = 15, ipadx = 50, ipady = 2)
 
-        self.bot_widget_frame.columnconfigure(1, weight=1)
-        self.bot_widget_frame.columnconfigure(2, weight=2)
+        self.tx_apply_button.bind("<Enter>", lambda event: self.tx_apply_button.configure(bg = "white"))
+        self.tx_apply_button.bind("<Leave>", lambda event: self.tx_apply_button.configure(bg = "light grey"))
+        self.tx_send_button.bind("<Enter>", lambda event: self.tx_send_button.configure(bg = "white"))
+        self.tx_send_button.bind("<Leave>", lambda event: self.tx_send_button.configure(bg = "light blue"))
 
-        #"send" button onClick callback
-        def processSendButton():
-            #text processing
-            text = self.tx_text.get("1.0", "end")
-            command_list = text.split()
+        #resizing factor  (uesless for now)
+        self.main_frame.columnconfigure(0, weight=1)
+        self.main_frame.rowconfigure((0, 1), weight=1)
 
-            #send commands
-            for command in command_list:
-                #parse input
-                command = command.strip() #delete trailing newlines and whitespaces
-                try:
-                    byteToSend = bytes.fromhex(command)
-                    self.send(byteToSend)
-                except ValueError as e:
-                    #echo error to the Console
-                    self.tx_text.delete('1.0', "end")
-                    self.tx_text.insert('1.0', e, "warning")
-                    logging.warning("Transimtted Address/Data has format error")
-            #prepare rx console for upcoming rx data
-            self.clear()
-            bytes_in_str = ' '.join(self.byte_buffer)
-            if len(bytes_in_str):
-                logging.info("Sent Data Packet Overview: {}".format(bytes_in_str))
-                self.byte_buffer.clear()
+        self.rx_console.columnconfigure(0, weight=1)
+        self.rx_console.rowconfigure(0, weight=1)
 
-        #"apply" button onClick callback
-        def processApplyButton():
-            command = self.command_var.get()
-            if command == "Choose a Command" or command not in DROP_DOWN_MENU:
-                return
-            byte_template = DROP_DOWN_MENU[command]
+        self.tx_console.columnconfigure(0, weight=1)
+        self.tx_console.rowconfigure(0, weight=1)
 
-            #prepare tx/rx console for upcoming rx data
-            self.clear()
-            self.tx_text.delete('1.0', "end")
+        self.command_frame.columnconfigure(0, weight=1)
+        self.command_frame.columnconfigure(1, weight=5)
+        self.command_frame.rowconfigure(0, weight=1)
 
-            bytes_in_str = ''
-            if (command == "DUMP MEMORY") or (command == "READ LOWER BYTE"):
-                result_byte = byte_template
-                self.send(result_byte)
-            elif (command == "LOAD ADDRESS") or (command == "LOAD DATA"):
-                address = self.entry_box_var.get()
-                #parse the address
-                if not len(address) == 8:
-                    self.tx_text.insert('1.0', "Please Check the Address/Data Format", "warning")
-                else:
-                    for bit in address:
-                        result_byte = bytes([int(bit, 16) | byte_template[0]]) #ORing operation
-                        self.send(result_byte)
-            bytes_in_str = ' '.join(self.byte_buffer)
-            self.tx_text.insert('end', bytes_in_str)
+    #"send" button onClick callback
+    def processSendButton(self):
+        #text processing
+        text = self.tx_text.get("1.0", "end")
+        command_list = text.split()
+
+        #send commands
+        for command in command_list:
+            #parse input
+            command = command.strip() #delete trailing newlines and whitespaces
+            try:
+                byteToSend = bytes.fromhex(command)
+                self.send(byteToSend)
+            except ValueError as e:
+                #echo error to the Console
+                self.tx_text.delete('1.0', "end")
+                self.tx_text.insert('1.0', e, "warning")
+                logging.warning("Transimtted Address/Data has format error")
+        #prepare rx console for upcoming rx data
+        self.clear()
+        bytes_in_str = ' '.join(self.byte_buffer)
+        if len(bytes_in_str):
             logging.info("Sent Data Packet Overview: {}".format(bytes_in_str))
             self.byte_buffer.clear()
 
-        #resizing factor  (uesless for now)
-        self.main_frame.columnconfigure(1, weight=1)
-        self.main_frame.rowconfigure(1, weight=1)
-        """
-        self.rx_console.columnconfigure(1, weight=1)
-        self.rx_console.rowconfigure(1, weight=1)
+    #"apply" button onClick callback
+    def processApplyButton(self):
+        command = self.command_var.get()
+        if command == "Choose a Command" or command not in DROP_DOWN_MENU:
+            return
+        byte_template = DROP_DOWN_MENU[command]
 
-        self.tx_console.columnconfigure(1, weight=1)
-        self.tx_console.rowconfigure(2, weight=1)
-        """
+        #prepare tx/rx console for upcoming rx data
+        self.clear()
+        self.tx_text.delete('1.0', "end")
 
+        bytes_in_str = ''
+        if (command == "DUMP MEMORY") or (command == "READ LOWER BYTE"):
+            result_byte = byte_template
+            self.send(result_byte)
+        elif (command == "LOAD ADDRESS") or (command == "LOAD DATA"):
+            address = self.entry_box_var.get()
+            #parse the address
+            if not len(address) == 8:
+                self.tx_text.insert('1.0', "Please Check the Address/Data Format", "warning")
+            else:
+                for bit in address:
+                    result_byte = bytes([int(bit, 16) | byte_template[0]]) #ORing operation
+                    self.send(result_byte)
+        bytes_in_str = ' '.join(self.byte_buffer)
+        self.tx_text.insert('end', bytes_in_str)
+        logging.info("Sent Data Packet Overview: {}".format(bytes_in_str))
+        self.byte_buffer.clear()
 
     def start(self):
         self.main_frame.mainloop()
