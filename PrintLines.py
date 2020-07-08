@@ -16,7 +16,7 @@ class PrintLines(serial.threaded.LineReader):
         logging.info('port opened\n')
 
     def handle_line(self, data):
-        logging.info('Line received: {}'.format(data.hex()))
+        logging.info('Byte received: {}'.format(data.hex()))
         self.input_q.put(data)
 
     def connection_lost(self, exc):

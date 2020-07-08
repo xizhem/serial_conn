@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import scrolledtext
+import serial.tools.list_ports
 import time
 import logging
 import os
@@ -15,13 +16,14 @@ DROP_DOWN_MENU = {
 
 class DebuggerInter():
     def __init__(self, serial_handle, log_name):
-        self.serial_handle = serial_handle
+        self.serial_handle = serial_handle      # Object <ReaderThread>
         self.rx_byteCount = 0
         self.response_start_time = 0
         self.TIMING = False
         self.byte_buffer = []
         self.BYTES_COUNTER = 0
         self.RANGE_MODE = False
+        self.raw_data = ''
 
         #tkinter setup
         self.main_frame = tk.Tk()
@@ -31,6 +33,10 @@ class DebuggerInter():
         self.menubar = tk.Menu(self.main_frame)
         self.main_frame.config(menu = self.menubar)
 
+        self.config_menu = tk.Menu(self.menubar, tearoff = 0)
+        self.menubar.add_cascade(label = "Config", menu = self.config_menu)
+        self.config_menu.add_command(label = "Change Serial Port", command = lambda: self.config_port())
+
         self.backlog_menu = tk.Menu(self.menubar, tearoff = 0)
         self.menubar.add_cascade(label = "Backlog", menu = self.backlog_menu)
         self.backlog_menu.add_command(label = "Open Backlog", command = lambda: os.startfile(log_name))
@@ -39,7 +45,7 @@ class DebuggerInter():
         self.menubar.add_cascade(label = "Edit", menu = self.edit_menu)
         self.edit_menu.add_command(label = "Format as Hexdump", command = lambda: self.to_hexdump(False))
         self.edit_menu.add_command(label = "Format as Canonical Hexdump", command = lambda: self.to_hexdump(True))
-
+        self.disable_edit_menu()
 
         self.help_menu = tk.Menu(self.menubar, tearoff = 0)
         self.menubar.add_cascade(label = "Help", menu = self.help_menu)
@@ -70,9 +76,11 @@ class DebuggerInter():
             command = self.command_var.get()
             if (command == "READ DATA RANGE" and not self.RANGE_MODE):
                 self.add_range_command_widgets()
+                self.enable_edit_menu()
             else:
                 if self.RANGE_MODE:
                     self.remove_range_command_widgets()
+                    self.disable_edit_menu()
 
             if (command == "DUMP MEMORY") or (command == "READ BYTE"):
                 self.entry_box.configure(state = "disabled")
@@ -103,7 +111,7 @@ class DebuggerInter():
         self.tx_send_button.bind("<Enter>", lambda event: self.tx_send_button.configure(bg = "white"))
         self.tx_send_button.bind("<Leave>", lambda event: self.tx_send_button.configure(bg = "light blue"))
 
-        #resizing factor  (uesless for now)
+        #resizing factor
         self.main_frame.columnconfigure(0, weight=1)
         self.main_frame.rowconfigure((0, 1), weight=1)
 
@@ -113,7 +121,6 @@ class DebuggerInter():
         self.tx_console.columnconfigure(0, weight=1)
         self.tx_console.rowconfigure(0, weight=1)
 
-        self.command_frame.columnconfigure(0, weight=1)
         self.command_frame.columnconfigure(1, weight=5)
         self.command_frame.rowconfigure(0, weight=1)
 
@@ -136,7 +143,7 @@ class DebuggerInter():
                 self.tx_text.insert('1.0', e, "warning")
                 logging.warning("Transimtted Address/Data has format error")
         #prepare rx console for upcoming rx data
-        self.clear()
+        self.clear_rx_console()
         bytes_in_str = ' '.join(self.byte_buffer)
         if len(bytes_in_str):
             logging.info("Sent Data Packet Overview: {}".format(bytes_in_str))
@@ -150,10 +157,8 @@ class DebuggerInter():
         byte_mask = DROP_DOWN_MENU[command]
 
         #prepare tx/rx console for upcoming rx data(do not clear in read data range command)
-
-        if command != "READ DATA RANGE":
-            self.clear()
-            self.tx_text.delete('1.0', "end")
+        self.clear_rx_console()
+        self.tx_text.delete('1.0', "end")
 
         bytes_in_str = ''
         if (command == "DUMP MEMORY") or (command == "READ BYTE"):
@@ -173,11 +178,14 @@ class DebuggerInter():
         elif (command == "READ DATA RANGE"):
             from_address_str = self.range_var_1.get()
             to_address_str = self.range_var_2.get()
+            self.raw_data = ''
 
             if not len(from_address_str) == 8:
                 self.tx_text.insert('1.0', "Please Check the FIRST Address Format", "warning")
+                return
             elif not len(to_address_str) == 8:
                 self.tx_text.insert('1.0', "Please Check the SECOND Address Format", "warning")
+                return
             else:
                 #convert string to int for iteration
                 from_address_int = int(from_address_str, 16)
@@ -207,6 +215,16 @@ class DebuggerInter():
     def start(self):
         self.main_frame.mainloop()
 
+    def disable_edit_menu(self):
+        self.edit_menu.entryconfig(0, state = "disabled")
+        self.edit_menu.entryconfig(1, state = "disabled")
+
+    def enable_edit_menu(self):
+        self.edit_menu.entryconfig(0, state = "normal")
+        self.edit_menu.entryconfig(1, state = "normal")
+
+
+
     def update_rx_text(self, data):
         #assuming one byte receiving at a time
         if data is not None:
@@ -217,6 +235,45 @@ class DebuggerInter():
                 self.rx_text.insert('end', ' ' + data.hex())
             self.rx_text.configure(state = "disabled")
             self.rx_byteCount += 1
+
+    def config_port(self):
+        current_port = self.serial_handle.serial.port
+
+        popup = tk.Toplevel()
+        popup.title("Change Serial Port")
+        popup.resizable(0,0)
+
+        msg = tk.Message(popup, text = "Select from Existing Port:", width = 150)
+        msg.grid(row = 0, column = 0, pady = (20, 0), padx = (30, 0))
+
+        port_var = tk.StringVar()
+        port_var.set(current_port)
+        ports_list = [i.device for i in serial.tools.list_ports.comports()]
+
+        ports_dropdown = tk.OptionMenu(popup, port_var, *(sorted(ports_list)))
+        ports_dropdown.config(bg = "light grey")
+        ports_dropdown.grid(row = 0, column = 1, pady = (20, 0), padx = (0, 30))
+
+        def assign_port():
+            self.serial_handle.serial.port = port_var.get()
+
+        buttons = tk.Frame(popup)
+        buttons.grid(row = 1, column = 0, columnspan = 2)
+        confirm = tk.Button(buttons, text = "Confirm", bg = "light grey", command = assign_port)
+        cancel = tk.Button(buttons, text = "Cancel", bg = "light grey", command = popup.destroy)
+        confirm.grid(row = 0, column = 0, padx = 10, pady = 15)
+        cancel.grid(row = 0, column = 1, padx = 15)
+
+        confirm.bind("<Enter>", lambda event: confirm.configure(bg = "white"))
+        confirm.bind("<Leave>", lambda event: confirm.configure(bg = "light grey"))
+        cancel.bind("<Enter>", lambda event: cancel.configure(bg = "white"))
+        cancel.bind("<Leave>", lambda event: cancel.configure(bg = "light grey"))
+        ports_dropdown.bind("<Enter>", lambda event: ports_dropdown.configure(bg = "white"))
+        ports_dropdown.bind("<Leave>", lambda event: ports_dropdown.configure(bg = "light grey"))
+
+        popup.rowconfigure(0, weight=1)
+        popup.columnconfigure(0, weight=1)
+
 
     def send(self, byteToSend):
         """send ONE byte at a time, in case when byteToSend is a sequence
@@ -233,7 +290,7 @@ class DebuggerInter():
             logging.warning("Failed to sent Byte: {}".format(byteToSend.hex()))
         return result
 
-    def clear(self):
+    def clear_rx_console(self):
         #prepare/clear rx console
         self.rx_text.configure(state = "normal")
         self.rx_text.delete('1.0', "end")
@@ -268,9 +325,10 @@ class DebuggerInter():
         self.range_entry_box_2 = tk.Entry(self.command_frame, textvariable = self.range_var_2)
         self.range_entry_box_2.grid(row = 0, column = 3, ipadx = 60, padx = 15, sticky = "NSEW")
 
-        self.tx_apply_button.grid(row = 0, column = 4, padx = 15, ipadx = 10, sticky = "E")
+        self.tx_apply_button.grid(row = 0, column = 4, padx = 15, ipadx = 10)
 
-        self.command_frame.columnconfigure((3,4), weight=5)
+        self.command_frame.columnconfigure(3, weight=5)
+
         self.RANGE_MODE = True
 
     #return to normal one entry box mode
@@ -282,22 +340,25 @@ class DebuggerInter():
         self.entry_box.grid(row = 0, column = 1, ipadx = 60, padx = 15, sticky = "NSEW")
         self.tx_apply_button.grid(row = 0, column = 1, padx = 15, ipadx = 10, sticky = "E")
 
-        self.command_frame.columnconfigure((3,4), weight=0)
+        self.command_frame.columnconfigure(3, weight=0)
         self.RANGE_MODE = False
 
     def to_hexdump(self, canonical: bool):
-        raw_data = self.rx_text.get('1.0', "end-1c")
-        if (self.RANGE_MODE) and (len(data) != 0):
+        if self.raw_data == '':
+            self.raw_data = self.rx_text.get('1.0', "end-1c")
+
+        if (self.RANGE_MODE) and (len(self.raw_data) != 0):
             hexdump = []
-            index = 2 #initial index where the most significant address upper byte is stored
+            index = 1 #initial index where the most significant address upper byte is stored
 
             count = 2
-            while index < len(raw_data):
+            while index < len(self.raw_data):
                 if count == 2:
+                    hexdump.append('\n')
                     #parse address
                     temp = []
                     for i in range(8):
-                        temp.append(raw_data[index::3])
+                        temp.append(self.raw_data[index::3])
                         index += 1
                     address = ''.join(temp)         #use join to improve performance over str + str
 
@@ -309,9 +370,9 @@ class DebuggerInter():
                     #skip current address
                     index += 24
 
-                #parse return bytes
+                #parse bytes
                 if canonical:
-                    current_word_str = raw_data[index: index+24] #one word in str(include space)
+                    current_word_str = self.raw_data[index: index+24] #one word in str(include space)
                     hexdump.append(current_word_str)
 
                     translate = []
@@ -322,15 +383,20 @@ class DebuggerInter():
                         except UnicodeDecodeError:
                             translate.append('.')
                     translate.append("|")
-                    hexdump.append("".join(tranlate))
+                    hexdump.append("".join(translate))
                     index += 24
                 else:
                     temp = []
                     for i in range(4):
-                        temp.append(raw_data[index: index+2])
-                        temp.append(raw_data[index+3: index+5])
+                        temp.append(self.raw_data[index: index+2])
+                        temp.append(self.raw_data[index+3: index+5])
                         hexdump.append("".join(temp))
                         index += 6
 
                 #translate byte to canonical repersentation
                 count += 1
+
+            self.clear_rx_console()
+            self.rx_text.configure(state = "normal")
+            self.rx_text.insert('end', " ".join(hexdump[1:]))
+            self.rx_text.configure(state = "disabled")

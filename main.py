@@ -51,7 +51,7 @@ with reader_thread as protocol:
                 d.response_overtime_warning()
                 d.timing_stop()
 
-            time.sleep(0.1)
+            time.sleep(0.01)
         logging.info("worker thread closed")
         return
 
