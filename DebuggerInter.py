@@ -35,6 +35,12 @@ class DebuggerInter():
         self.menubar.add_cascade(label = "Backlog", menu = self.backlog_menu)
         self.backlog_menu.add_command(label = "Open Backlog", command = lambda: os.startfile(log_name))
 
+        self.edit_menu = tk.Menu(self.menubar, tearoff = 0)
+        self.menubar.add_cascade(label = "Edit", menu = self.edit_menu)
+        self.edit_menu.add_command(label = "Format as Hexdump", command = lambda: self.to_hexdump(False))
+        self.edit_menu.add_command(label = "Format as Canonical Hexdump", command = lambda: self.to_hexdump(True))
+
+
         self.help_menu = tk.Menu(self.menubar, tearoff = 0)
         self.menubar.add_cascade(label = "Help", menu = self.help_menu)
         self.help_menu.add_command(label = "NO HELP")
@@ -62,7 +68,7 @@ class DebuggerInter():
         #dropdown callback
         def onChange_dropdown(*args):
             command = self.command_var.get()
-            if (command == "READ DATA RANGE"):
+            if (command == "READ DATA RANGE" and not self.RANGE_MODE):
                 self.add_range_command_widgets()
             else:
                 if self.RANGE_MODE:
@@ -278,3 +284,53 @@ class DebuggerInter():
 
         self.command_frame.columnconfigure((3,4), weight=0)
         self.RANGE_MODE = False
+
+    def to_hexdump(self, canonical: bool):
+        raw_data = self.rx_text.get('1.0', "end-1c")
+        if (self.RANGE_MODE) and (len(data) != 0):
+            hexdump = []
+            index = 2 #initial index where the most significant address upper byte is stored
+
+            count = 2
+            while index < len(raw_data):
+                if count == 2:
+                    #parse address
+                    temp = []
+                    for i in range(8):
+                        temp.append(raw_data[index::3])
+                        index += 1
+                    address = ''.join(temp)         #use join to improve performance over str + str
+
+                    hexdump.append(address)
+                    index += 2
+                    #reset count since we display address for every TWO returned data words(32 bit)
+                    count = 0
+                else:
+                    #skip current address
+                    index += 24
+
+                #parse return bytes
+                if canonical:
+                    current_word_str = raw_data[index: index+24] #one word in str(include space)
+                    hexdump.append(current_word_str)
+
+                    translate = []
+                    translate.append("|")
+                    for i in range(0, len(current_word_str), 3):
+                        try:
+                            translate.append(bytes.fromhex(current_word_str[i: i+2]).decode("ascii"))
+                        except UnicodeDecodeError:
+                            translate.append('.')
+                    translate.append("|")
+                    hexdump.append("".join(tranlate))
+                    index += 24
+                else:
+                    temp = []
+                    for i in range(4):
+                        temp.append(raw_data[index: index+2])
+                        temp.append(raw_data[index+3: index+5])
+                        hexdump.append("".join(temp))
+                        index += 6
+
+                #translate byte to canonical repersentation
+                count += 1
