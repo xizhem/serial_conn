@@ -349,54 +349,72 @@ class DebuggerInter():
 
         if (self.RANGE_MODE) and (len(self.raw_data) != 0):
             hexdump = []
-            index = 1 #initial index where the most significant address upper byte is stored
+            index = 0 # initial index to traverse raw_data
+            address_count = 16 # display address for every 16 returned bytes (advance address by 1 hex unit)
+            address_temp = []
+            concat_count = 0 # two bytes should concatonate together under non-cononical formatting
+            concat_temp  = []
+            canonical_text = []
 
-            count = 2
             while index < len(self.raw_data):
-                if count == 2:
-                    hexdump.append('\n')
+                if address_count >= 16:
+                    if len(hexdump):
+                        hexdump[-1] = hexdump[-1] + '\n'
+                    else:
+                        hexdump.append("")
                     #parse address
-                    temp = []
-                    for i in range(8):
-                        temp.append(self.raw_data[index::3])
-                        index += 1
-                    address = ''.join(temp)         #use join to improve performance over str + str
+                    address_temp.extend(self.raw_data[index+1: index+24: 3])
+                    index += 24
 
+                    address = ''.join(address_temp)    # use join to improve performance over str + str
                     hexdump.append(address)
-                    index += 2
-                    #reset count since we display address for every TWO returned data words(32 bit)
-                    count = 0
-                else:
-                    #skip current address
-                    index += 24
 
-                #parse bytes
+                    address_temp.clear()
+                    address_count = 0
+                else:
+                    index += 24  #skip current address
+
+                #parse based on whether user wants canonical repersentation or not
                 if canonical:
-                    current_word_str = self.raw_data[index: index+24] #one word in str(include space)
-                    hexdump.append(current_word_str)
+                    data = self.raw_data[index: index+2]
+                    hexdump.append(data)
 
-                    translate = []
-                    translate.append("|")
-                    for i in range(0, len(current_word_str), 3):
-                        try:
-                            translate.append(bytes.fromhex(current_word_str[i: i+2]).decode("ascii"))
-                        except UnicodeDecodeError:
-                            translate.append('.')
-                    translate.append("|")
-                    hexdump.append("".join(translate))
-                    index += 24
+                    if address_count == 0:
+                        canonical_text.append("|")
+                    try:
+                        temp_text = bytes.fromhex(data).decode("ascii")
+                        temp_text = re.sub(r'[^\x21-\x7e]',r'.', temp_text)
+                        canonical_text.append(temp_text)
+                        print(canonical_text)
+                    except UnicodeDecodeError:
+                        canonical_text.append('.')
+
+                    if address_count == 15: #next line
+                        canonical_text.append("|")
+                        hexdump.append("".join(canonical_text))
+                        canonical_text.clear()
+                    index += 3
                 else:
-                    temp = []
-                    for i in range(4):
-                        temp.append(self.raw_data[index: index+2])
-                        temp.append(self.raw_data[index+3: index+5])
-                        hexdump.append("".join(temp))
-                        index += 6
+                    concat_temp.append(self.raw_data[index: index+2])
+                    concat_count += 1
+                    index += 3
 
-                #translate byte to canonical repersentation
-                count += 1
+                    if concat_count >= 2:
+                        hexdump.append("".join(concat_temp))
+                        concat_temp.clear()
+                        concat_count = 0
+                #endif
+                address_count += 1
+            #endwhile
+            if len(concat_temp):
+                hexdump.append("".join(concat_temp))    #add in what was left in concat_temp buffer
+
+            if len(canonical_text):
+                canonical_text.insert(0, " " * (16-address_count) * 3)
+                canonical_text.append("|")
+                hexdump.append("".join(canonical_text)) #add in what was left in canonical_text buffer
 
             self.clear_rx_console()
             self.rx_text.configure(state = "normal")
-            self.rx_text.insert('end', " ".join(hexdump[1:]))
+            self.rx_text.insert('end', " ".join(hexdump)) #[1:] to get rid of newline
             self.rx_text.configure(state = "disabled")
