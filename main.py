@@ -34,24 +34,27 @@ loop = serial.serial_for_url(PORT_L, BAUD, PACKET_SIZE, PARITY, STOPBIT, timeout
 reader_thread = serial.threaded.ReaderThread(loop, PrintLines)
 debugger_inter = DebuggerInter(reader_thread, LOG_NAME)
 
+#{with reader_thread} will creat and return a instance called protocol from PrintLines class
 #exit {with..as..} block will close the readerThread
 with reader_thread as protocol:
     # a worker thread to update input data to TKINTER (midpoint connection between Tkiner and Pyserial)
-    def worker(p, d):
+    def worker(protocol, interface):
         logging.info("worker thread running")
         #object with flag "do_run " to let outside kill the thread
         t = threading.currentThread()
         while getattr(t, "do_run", True):
-            if p.is_ready():
-                d.timing_stop()
-                d.update_rx_text(p.get_data())
+            if protocol.is_ready():
+                interface.timing_stop()
+                interface.update_rx_text(protocol.get_data())
+            else:
+                interface.flush_update_buffer()
+                time.sleep(0.1)
 
-            if d.TIMING and d.response_elapsed() > 10:
-                logging.warning("No Response from FPGA")
-                d.response_overtime_warning()
-                d.timing_stop()
+                if interface.TIMING and interface.response_elapsed() > 10:
+                    logging.warning("No Response from FPGA")
+                    interface.response_overtime_warning()
+                    interface.timing_stop()
 
-            time.sleep(0.01)
         logging.info("worker thread closed")
         return
 

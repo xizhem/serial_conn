@@ -13,7 +13,7 @@ class PrintLines(serial.threaded.LineReader):
 
     def connection_made(self, transport):
         super(PrintLines, self).connection_made(transport)
-        logging.info('port opened\n')
+        logging.info('protocol opened\n')
 
     def handle_line(self, data):
         logging.info('Byte received: {}'.format(data.hex()))
@@ -22,7 +22,7 @@ class PrintLines(serial.threaded.LineReader):
     def connection_lost(self, exc):
         if exc:
             traceback.print_exc()
-        logging.info('port closed\n')
+        logging.info('protocol closed\n')
 
     def is_ready(self):
         return not self.input_q.empty()

@@ -4,6 +4,7 @@ import serial.tools.list_ports
 import time
 import logging
 import os
+import re
 
 DROP_DOWN_MENU = {
 "DUMP MEMORY": b'\x00',
@@ -17,13 +18,14 @@ DROP_DOWN_MENU = {
 class DebuggerInter():
     def __init__(self, serial_handle, log_name):
         self.serial_handle = serial_handle      # Object <ReaderThread>
-        self.rx_byteCount = 0
         self.response_start_time = 0
-        self.TIMING = False
         self.byte_buffer = []
-        self.BYTES_COUNTER = 0
-        self.RANGE_MODE = False
+        self.update_buffer = []
         self.raw_data = ''
+        self.TIMING = False
+        self.rx_first_byte = True
+        self.RANGE_MODE = False
+
 
         #tkinter setup
         self.main_frame = tk.Tk()
@@ -223,18 +225,24 @@ class DebuggerInter():
         self.edit_menu.entryconfig(0, state = "normal")
         self.edit_menu.entryconfig(1, state = "normal")
 
-
-
     def update_rx_text(self, data):
         #assuming one byte receiving at a time
         if data is not None:
+            self.update_buffer.append(data.hex())
+
+            if len(self.update_buffer) > 25:
+                self.rx_text.configure(state = "normal")
+                self.update_buffer.append("") #insert a space
+                self.rx_text.insert('end', " ".join(self.update_buffer))
+                self.rx_text.configure(state = "disabled")
+                self.update_buffer.clear()
+
+    def flush_update_buffer(self):
+        if len(self.update_buffer):
             self.rx_text.configure(state = "normal")
-            if self.rx_byteCount <= 0:
-                self.rx_text.insert('end', data.hex())
-            else:
-                self.rx_text.insert('end', ' ' + data.hex())
+            self.rx_text.insert('end', " ".join(self.update_buffer))
             self.rx_text.configure(state = "disabled")
-            self.rx_byteCount += 1
+            self.update_buffer.clear()
 
     def config_port(self):
         current_port = self.serial_handle.serial.port
@@ -295,7 +303,7 @@ class DebuggerInter():
         self.rx_text.configure(state = "normal")
         self.rx_text.delete('1.0', "end")
         self.rx_text.configure(state = "disabled")
-        self.rx_byteCount = 0
+        self.rx_first_byte = True
 
     def timing_begin(self):
         self.TIMING = True
@@ -385,7 +393,6 @@ class DebuggerInter():
                         temp_text = bytes.fromhex(data).decode("ascii")
                         temp_text = re.sub(r'[^\x21-\x7e]',r'.', temp_text)
                         canonical_text.append(temp_text)
-                        print(canonical_text)
                     except UnicodeDecodeError:
                         canonical_text.append('.')
 
@@ -416,5 +423,4 @@ class DebuggerInter():
 
             self.clear_rx_console()
             self.rx_text.configure(state = "normal")
-            self.rx_text.insert('end', " ".join(hexdump)) #[1:] to get rid of newline
-            self.rx_text.configure(state = "disabled")
+            self.rx_text.insert('end', " ".join(hexdump))
