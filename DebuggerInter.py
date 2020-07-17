@@ -12,7 +12,18 @@ DROP_DOWN_MENU = {
 "LOAD DATA": b'\x40',         #0x4-
 "READ BYTE": b'\xE0',    #0xE-
 "READ DATA RANGE" : b'\x20'   #FF is just the same as loading, this command composite Load Address and READ BYTE
+}
 
+STD_BAUD = [
+110, 300, 600, 1200, 2400, 4800, 9600,
+14400, 19200, 38400, 57600, 115200,
+128000, 256000
+]
+
+STD_STOPBITS = {
+'1'  : serial.STOPBITS_ONE,
+'1.5': serial.STOPBITS_ONE_POINT_FIVE,
+'2'  : serial.STOPBITS_TWO
 }
 
 class DebuggerInter():
@@ -37,7 +48,7 @@ class DebuggerInter():
 
         self.config_menu = tk.Menu(self.menubar, tearoff = 0)
         self.menubar.add_cascade(label = "Config", menu = self.config_menu)
-        self.config_menu.add_command(label = "Change Serial Port", command = lambda: self.config_port())
+        self.config_menu.add_command(label = "Change Serial Settings", command = lambda: self.config_port())
 
         self.backlog_menu = tk.Menu(self.menubar, tearoff = 0)
         self.menubar.add_cascade(label = "Backlog", menu = self.backlog_menu)
@@ -246,13 +257,28 @@ class DebuggerInter():
 
     def config_port(self):
         current_port = self.serial_handle.serial.port
+        current_baud = self.serial_handle.serial.baudrate
+        current_stopbits = self.serial_handle.serial.stopbits
 
         popup = tk.Toplevel()
-        popup.title("Change Serial Port")
+        popup.title("Settings")
         popup.resizable(0,0)
 
-        msg = tk.Message(popup, text = "Select from Existing Port:", width = 150)
-        msg.grid(row = 0, column = 0, pady = (20, 0), padx = (30, 0))
+        #centering
+        width = 350
+        height = 220
+        root_width = self.main_frame.winfo_width()
+        root_height = self.main_frame.winfo_height()
+        print(root_width)
+        x = self.main_frame.winfo_x()
+        y = self.main_frame.winfo_y()
+        x = x + (root_width/2 - width/2)
+        y = y + (root_height/2 - height/2)
+        popup.geometry("%dx%d+%d+%d" % (350, 220 , x, y))
+
+        #ports
+        port_msg = tk.Message(popup, text = "Port:")
+        port_msg.grid(row = 0, column = 0, pady = (20, 0), padx = (30, 0))
 
         port_var = tk.StringVar()
         port_var.set(current_port)
@@ -262,22 +288,53 @@ class DebuggerInter():
         ports_dropdown.config(bg = "light grey")
         ports_dropdown.grid(row = 0, column = 1, pady = (20, 0), padx = (0, 30))
 
-        def assign_port():
+
+        #baud rates
+        port_msg = tk.Message(popup, text = "Baud Rate:")
+        port_msg.grid(row = 1, column = 0, pady = (20, 0), padx = (30, 0))
+
+        baud_var = tk.StringVar()
+        baud_var.set(current_baud)
+
+        baud_dropdown = tk.OptionMenu(popup, baud_var, *STD_BAUD)
+        baud_dropdown.config(bg = "light grey")
+        baud_dropdown.grid(row = 1, column = 1, pady = (20, 0), padx = (0, 30))
+
+        #stop bits
+        stopbits_msg = tk.Message(popup, text = "Stop Bits:")
+        stopbits_msg.grid(row = 2, column = 0, pady = (20, 0), padx = (30, 0))
+
+        stopbits_var= tk.StringVar()
+        stopbits_var.set(current_stopbits)
+
+        stopbits_dropdown = tk.OptionMenu(popup, stopbits_var, *STD_STOPBITS)
+        stopbits_dropdown.config(bg = "light grey")
+        stopbits_dropdown.grid(row = 2, column = 1, pady = (20, 0), padx = (0, 30))
+
+
+        def assign():
             self.serial_handle.serial.port = port_var.get()
+            self.serial_handle.serial.baudrate = baud_var.get()
+            self.serial_handle.serial.stopbits = STD_STOPBITS[stopbits_var.get()]
+            popup.destroy()
 
         buttons = tk.Frame(popup)
-        buttons.grid(row = 1, column = 0, columnspan = 2)
-        confirm = tk.Button(buttons, text = "Confirm", bg = "light grey", command = assign_port)
+        buttons.grid(row = 3, column = 0, columnspan = 2)
+        save = tk.Button(buttons, text = "Save", bg = "light grey", command = assign)
         cancel = tk.Button(buttons, text = "Cancel", bg = "light grey", command = popup.destroy)
-        confirm.grid(row = 0, column = 0, padx = 10, pady = 15)
-        cancel.grid(row = 0, column = 1, padx = 15)
+        save.grid(row = 0, column = 0, ipadx = 10, padx = 10, pady = 15)
+        cancel.grid(row = 0, column = 1,ipadx = 5, padx = 15)
 
-        confirm.bind("<Enter>", lambda event: confirm.configure(bg = "white"))
-        confirm.bind("<Leave>", lambda event: confirm.configure(bg = "light grey"))
+        save.bind("<Enter>", lambda event: save.configure(bg = "white"))
+        save.bind("<Leave>", lambda event: save.configure(bg = "light grey"))
         cancel.bind("<Enter>", lambda event: cancel.configure(bg = "white"))
         cancel.bind("<Leave>", lambda event: cancel.configure(bg = "light grey"))
         ports_dropdown.bind("<Enter>", lambda event: ports_dropdown.configure(bg = "white"))
         ports_dropdown.bind("<Leave>", lambda event: ports_dropdown.configure(bg = "light grey"))
+        baud_dropdown.bind("<Enter>", lambda event: baud_dropdown.configure(bg = "white"))
+        baud_dropdown.bind("<Leave>", lambda event: baud_dropdown.configure(bg = "light grey"))
+        stopbits_dropdown.bind("<Enter>", lambda event: stopbits_dropdown.configure(bg = "white"))
+        stopbits_dropdown.bind("<Leave>", lambda event: stopbits_dropdown.configure(bg = "light grey"))
 
         popup.rowconfigure(0, weight=1)
         popup.columnconfigure(0, weight=1)
