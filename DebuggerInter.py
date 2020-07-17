@@ -26,6 +26,8 @@ STD_STOPBITS = {
 '2'  : serial.STOPBITS_TWO
 }
 
+STATUS_BAR_TEMPLATE = "serialMonitorAddr: "
+
 class DebuggerInter():
     def __init__(self, serial_handle, log_name):
         self.serial_handle = serial_handle      # Object <ReaderThread>
@@ -124,6 +126,11 @@ class DebuggerInter():
         self.tx_send_button.bind("<Enter>", lambda event: self.tx_send_button.configure(bg = "white"))
         self.tx_send_button.bind("<Leave>", lambda event: self.tx_send_button.configure(bg = "light blue"))
 
+        #bottome status bar
+        self.status_var = tk.StringVar(value = STATUS_BAR_TEMPLATE + "NaN")
+        self.status_bar = tk.Label(self.tx_console, textvariable = self.status_var, bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.grid(row = 3, column = 0, sticky = "NSWE")
+
         #resizing factor
         self.main_frame.columnconfigure(0, weight=1)
         self.main_frame.rowconfigure((0, 1), weight=1)
@@ -146,7 +153,7 @@ class DebuggerInter():
         #send commands
         for byte_str in text:
             #parse input
-            byte_str = byte.strip() #delete trailing newlines and whitespaces
+            byte_str = byte_str.strip() #delete trailing newlines and whitespaces
             try:
                 byteToSend = bytes.fromhex(byte_str)
                 self.send(byteToSend)
@@ -156,11 +163,7 @@ class DebuggerInter():
                 self.tx_text.insert('1.0', e, "warning")
                 logging.warning("Transimtted Address/Data has format error")
         #prepare rx console for upcoming rx data
-        self.clear_rx_console()
-        bytes_in_str = ' '.join(self.byte_buffer)
-        if len(bytes_in_str):
-            logging.info("Sent Data Packet Overview: {}".format(bytes_in_str))
-            self.byte_buffer.clear()
+        self.sent_packages_routines()
 
     #"apply" button onClick callback
     def processApplyButton(self):
@@ -170,7 +173,6 @@ class DebuggerInter():
         byte_mask = DROP_DOWN_MENU[command]
 
         #prepare tx/rx console for upcoming rx data(do not clear in read data range command)
-        self.clear_rx_console()
         self.tx_text.delete('1.0', "end")
 
         bytes_in_str = ''
@@ -220,10 +222,29 @@ class DebuggerInter():
                     self.send(read_byte_command)
 
         #printing and logging
-        bytes_in_str = ' '.join(self.byte_buffer)
+        bytes_in_str = self.sent_packages_routines()
         self.tx_text.insert('end', bytes_in_str)
-        logging.info("Sent Data Packet Overview: {}".format(bytes_in_str))
-        self.byte_buffer.clear()
+
+    def sent_packages_routines(self):
+        """ a routine that is used both by send button and apply button:
+            to prepare/clear the rx console for upcoming data,
+            logging the bytes into the backlog,
+            and check the address pointed to by serialMonitorAddr currently
+            Return the sent packages in str
+        """
+        self.clear_rx_console()
+        bytes_in_str = ' '.join(self.byte_buffer)
+        if len(bytes_in_str):
+            logging.info("Sent Data Packet Overview: {}".format(bytes_in_str))
+            self.byte_buffer.clear()
+
+            m = re.match(r".*2(.) 2(.) 2(.) 2(.) 2(.) 2(.) 2(.) 2(.)", bytes_in_str)
+            if m:
+                address = []
+                for i in range(1,9):
+                    address.append(m.group(i))
+                self.status_var.set(STATUS_BAR_TEMPLATE + "".join(address))
+        return bytes_in_str
 
     def start(self):
         self.main_frame.mainloop()
@@ -339,7 +360,6 @@ class DebuggerInter():
         popup.rowconfigure(0, weight=1)
         popup.columnconfigure(0, weight=1)
 
-
     def send(self, byteToSend):
         """send ONE byte at a time, in case when byteToSend is a sequence
            serial.write() will chop the sequence and send ONE byte at a time"""
@@ -375,6 +395,7 @@ class DebuggerInter():
         self.rx_text.configure(state = "normal")
         self.rx_text.insert('end', "No Response from FPGA", "warning")
         self.rx_text.configure(state = "disabled")
+        self.status_var.set(STATUS_BAR_TEMPLATE + "NaN")
 
     #range address mode
     def add_range_command_widgets(self):
@@ -481,3 +502,4 @@ class DebuggerInter():
             self.clear_rx_console()
             self.rx_text.configure(state = "normal")
             self.rx_text.insert('end', " ".join(hexdump))
+            self.rx_text.configure(state = "disabled")
