@@ -47,7 +47,6 @@ with reader_thread as protocol:
                 interface.timing_stop()
                 interface.update_rx_text(protocol.get_data())
             else:
-                interface.flush_update_buffer()
                 time.sleep(0.1)
 
                 if interface.TIMING and interface.response_elapsed() > 10:

@@ -39,6 +39,7 @@ class DebuggerInter():
     def __init__(self, serial_handle, log_name):
         self.serial_handle = serial_handle      # Object <ReaderThread>
         self.response_start_time = 0
+        self.send_count = 0
         self.byte_buffer = []
         self.update_buffer = []
         self.raw_data = ''
@@ -82,7 +83,6 @@ class DebuggerInter():
         self.help_menu = tk.Menu(self.menubar, tearoff = 0)
         self.menubar.add_cascade(label = "Help", menu = self.help_menu)
         self.help_menu.add_command(label = "NO HELP")
-
 
         #------Simplified Mode------#
         self.s_command_frame = ttk.LabelFrame(self.simplified_tab, text = "Commands")
@@ -228,6 +228,7 @@ class DebuggerInter():
         bytes_in_str = ''
         if (command == "DUMP MEMORY") or (command == "READ BYTE"):
             result_byte = byte_mask
+            self.send_count += 1
             self.send(result_byte)
 
         elif (command == "LOAD ADDRESS") or (command == "LOAD DATA"):
@@ -235,12 +236,17 @@ class DebuggerInter():
             try:
                 int(input_byte_str, 16)
             except ValueError as e:
-                self.tx_text.insert('1.0', "Please Check that Address contains valid HEX only", "warning")
+                warn_str = "Please Check that Address contains valid HEX only"
+                self.tx_text.insert('1.0', warn_str, "warning")
+                logging.warning(warn_str)
                 return
             #parse the address/data
             if not len(input_byte_str) == 8:
-                self.tx_text.insert('1.0', "Please Check the Address/Data Format", "warning")
+                warn_str = "Please Check the Address/Data Format"
+                self.tx_text.insert('1.0', warn_str, "warning")
+                logging.warning(warn_str)
             else:
+                self.send_count += 8
                 for lower_bits in input_byte_str:
                     result_byte = bytes([int(lower_bits, 16) | byte_mask[0]]) #ORing operation
                     self.send(result_byte)
@@ -251,10 +257,14 @@ class DebuggerInter():
             self.raw_data = ''
 
             if not len(from_address_str) == 8:
-                self.tx_text.insert('1.0', "Please Check the FIRST Address Format", "warning")
+                warn_str = "Please Check the FIRST Address Format"
+                self.tx_text.insert('1.0', warn_str, "warning")
+                logging.warning(warn_str)
                 return
             elif not len(to_address_str) == 8:
-                self.tx_text.insert('1.0', "Please Check the SECOND Address Format", "warning")
+                warn_str = "Please Check the SECOND Address Format"
+                self.tx_text.insert('1.0', warn_str, "warning")
+                logging.warning(warn_str)
                 return
             else:
                 #convert string to int for iteration
@@ -262,13 +272,18 @@ class DebuggerInter():
                     from_address_int = int(from_address_str, 16)
                     to_address_int = int(to_address_str, 16)
                 except ValueError as e:
-                    self.tx_text.insert('1.0', "Please Check that Address contains valid HEX only", "warning")
+                    warn_str = "Please Check that Address contains valid HEX only"
+                    self.tx_text.insert('1.0', warn_str, "warning")
+                    logging.warning(warn_str)
                     return
 
                 if to_address_int < from_address_int:
-                    self.tx_text.insert('1.0', "Please Check the RANGE, first address is greater than second address", "warning")
+                    warn_str = "Please Check the RANGE, first address is greater than second address"
+                    self.tx_text.insert('1.0', warn_str, "warning")
+                    logging.warning(warn_str)
                     return
 
+                self.send_count += (to_address_int - from_address_int + 1) * 9
                 #using existing command, i.e load address and read bytes
                 for i in range(from_address_int, to_address_int + 1):
                     #assume the most sig byte is to the leftmost, thus byteorder
@@ -282,7 +297,7 @@ class DebuggerInter():
 
         #printing and logging
         bytes_in_str = self.sent_packages_routines()
-        self.tx_text.insert('end', bytes_in_str)
+        self.tx_text.insert('end', self.break_line(bytes_in_str))
 
     def sent_packages_routines(self):
         """ a routine that is used both by send button and apply button:
@@ -291,11 +306,12 @@ class DebuggerInter():
             and check the address pointed to by serialMonitorAddr currently
             Return the sent packages in str
         """
-        self.flush_update_buffer()
         self.clear_rx_console()
         bytes_in_str = ' '.join(self.byte_buffer)
+
         if len(bytes_in_str):
             logging.info("Sent Data Packet Overview: {}".format(bytes_in_str))
+            logging.info("Sent Data Packet Overview(cont.): {} byte in total". format(self.send_count))
             self.byte_buffer.clear()
 
             m = re.match(r".*2(.) 2(.) 2(.) 2(.) 2(.) 2(.) 2(.) 2(.)", bytes_in_str)
@@ -322,21 +338,31 @@ class DebuggerInter():
         if data is not None:
             #a buffer to write chunks of data to improve performance
             self.update_buffer.append(data.hex())
-            #force inserting text in simplified mode
-            if len(self.update_buffer) > 32:
+            if len(self.update_buffer) >= self.send_count:          #assume receive same amount of bytes as sending out
+                if len(self.update_buffer) > self.send_count:
+                    warn_str = "Please Check connection, receive more data than expected"
+                    self.update_buffer.append("Warning: " + warn_str)
+                    logging.warning(warn_str)
                 self.rx_text.configure(state = "normal")
-                self.update_buffer.append("") #insert a space
-                self.rx_text.insert('end', " ".join(self.update_buffer))
+                result = " ".join(self.update_buffer)
+                self.raw_data = result
+                result = self.break_line(result)
+                self.rx_text.insert('end', result)
                 self.rx_text.configure(state = "disabled")
                 self.update_buffer.clear()
+                self.send_count = 0
+                self.flush_done = True
 
-    def flush_update_buffer(self):
-        if len(self.update_buffer):
-            self.rx_text.configure(state = "normal")
-            self.rx_text.insert('end', " ".join(self.update_buffer))
-            self.rx_text.configure(state = "disabled")
-            self.update_buffer.clear()
-            self.flush_done = True
+    def break_line(self, result):
+        #break a single super long line into multiple short line to increase performance
+        break_num = 110
+        if len(result) > break_num:
+            letter_index = 0
+            for i in range(break_num, len(result), break_num):
+                while result[i] != " ":
+                    i -= 1
+                result = result[:i] + "\n" + result[i+1:] #add new line
+        return result
 
     def config_port(self):
         current_port = self.serial_handle.serial.port
@@ -347,23 +373,22 @@ class DebuggerInter():
         popup.title("Settings")
         popup.resizable(0,0)
 
-        #centering
+        #centering pop up window
         width = 350
-        height = 270
+        height = 240
         root_width = self.main_frame.winfo_width()
         root_height = self.main_frame.winfo_height()
-
         x = self.main_frame.winfo_x()
         y = self.main_frame.winfo_y()
         x = x + (root_width/2 - width/2)
         y = y + (root_height/2 - height/2)
-        popup.geometry("%dx%d+%d+%d" % (350, 220 , x, y))
+        popup.geometry("%dx%d+%d+%d" % (width, height , x, y))
 
-        f = tk.Frame(popup, borderwidth =1, relief=tk.SOLID)
-        f.grid(row = 0, column = 0, ipadx = 10, pady = (20,0), ipady = 5)
+        f = ttk.LabelFrame(popup, text = "Settings")
+        f.grid(row = 0, column = 0, ipadx = 10, pady = (20,0))
         #ports
         port_msg = tk.Message(f, text = "Port:")
-        port_msg.grid(row = 0, column = 0, pady = (10, 0), padx = (20, 0), sticky = "W")
+        port_msg.grid(row = 0, column = 0, pady = (5, 0), padx = (20, 0), sticky = "W")
 
         port_var = tk.StringVar()
         port_var.set(current_port)
@@ -372,7 +397,6 @@ class DebuggerInter():
         ports_dropdown = tk.OptionMenu(f, port_var, *(sorted(ports_list)))
         ports_dropdown.config(bg = "light grey")
         ports_dropdown.grid(row = 0, column = 1, pady = (10, 0), padx = (110, 0), sticky = "E")
-
 
         #baud rates
         port_msg = tk.Message(f, text = "Baud Rate:")
@@ -387,15 +411,14 @@ class DebuggerInter():
 
         #stop bits
         stopbits_msg = tk.Message(f, text = "Stop Bits:")
-        stopbits_msg.grid(row = 2, column = 0, pady = (10, 0), padx = (20, 0), sticky = "W")
+        stopbits_msg.grid(row = 2, column = 0, pady = (10, 10), padx = (20, 0), sticky = "W")
 
         stopbits_var= tk.StringVar()
         stopbits_var.set(current_stopbits)
 
         stopbits_dropdown = tk.OptionMenu(f, stopbits_var, *STD_STOPBITS)
         stopbits_dropdown.config(bg = "light grey")
-        stopbits_dropdown.grid(row = 2, column = 1, pady = (10, 0), sticky = "E")
-
+        stopbits_dropdown.grid(row = 2, column = 1, pady = (10, 10), sticky = "E")
 
         def assign():
             self.serial_handle.serial.port = port_var.get()
@@ -431,8 +454,9 @@ class DebuggerInter():
         if not self.TIMING:
             self.response_start_time = time.perf_counter()
             self.timing_begin()
+            self.flush_done = False  #flag to indicate incoming data is expected
+
         result = self.serial_handle.serial.write(byteToSend)
-        self.flush_done = False
 
         if result >= 1:
             logging.info("Successfully sent Byte: {}".format(byteToSend.hex()))
@@ -500,10 +524,11 @@ class DebuggerInter():
                                   length=150, mode="determinate")
         self.progress.grid(row = 1, column = 2)
 
-        self.s_send = ttk.Button(self.right_frame, text = "Send", command = lambda: self.process_s_write_button())
-        self.s_send.grid(row = 2, column = 2, pady = 15)
+        self.s_write_button = ttk.Button(self.right_frame, text = "Write", command = lambda: self.process_s_write_button())
+        self.s_write_button.grid(row = 2, column = 2, pady = 15)
 
         self.s_control_frame.columnconfigure((0,1), weight=1)
+
     def add_s_read_widgets(self):
         #clear up the control frame
         self.remove_s_control_widgets()
@@ -540,7 +565,7 @@ class DebuggerInter():
         self.address_entry_1 = ttk.Entry(self.lower_R_frame, textvariable = self.read_address_var_1)
         self.to_label = ttk.Label(self.lower_R_frame, text = "TO")
         self.address_entry_2 = ttk.Entry(self.lower_R_frame, textvariable = self.read_address_var_2)
-        self.read_button = ttk.Button(self.lower_R_frame, text = "Read", command = lambda: self.process_s_read_button())
+        self.s_read_button = ttk.Button(self.lower_R_frame, text = "Read", command = lambda: self.process_s_read_button())
 
         def onChange_read_mode(*args):
             for widget in self.lower_R_frame.winfo_children():
@@ -548,13 +573,13 @@ class DebuggerInter():
             if self.read_mode_var.get() == "1":
                 self.address_prompt.grid(row = 0, column = 0, pady = 5)
                 self.address_entry_1.grid(row = 1, column = 0)
-                self.read_button.grid(row = 2, column = 0, pady = (10,0))
+                self.s_read_button.grid(row = 2, column = 0, pady = (10,0))
             elif self.read_mode_var.get() == "2":
                 self.address_prompt.grid(row = 0, column = 1, pady = 5)
                 self.address_entry_1.grid(row = 1, column = 0)
                 self.to_label.grid(row = 1, column = 1)
                 self.address_entry_2 .grid(row = 1, column = 2)
-                self.read_button.grid(row = 2, column = 1, pady = (10,0))
+                self.s_read_button.grid(row = 2, column = 1, pady = (10,0))
 
         self.read_mode_var.trace("w", onChange_read_mode)
 
@@ -580,6 +605,7 @@ class DebuggerInter():
         self.s_rx_text.configure(state = "disabled")
 
         def helper():
+            self.s_read_button.config(state = "disabled")
             text = self.tx_text.get("1.0", "end")
             if "Please Check" in text:
                 self.s_rx_text.configure(state = "normal")
@@ -593,7 +619,7 @@ class DebuggerInter():
         def worker(mode):
             self.busy_bus.grid(row = 1, column = 0, sticky = "NSEW")
             self.busy_bus.start(10)
-            self.read_button.config(state = "disabled")
+            #polling the rx text box in advanced mode until data is received
             while True:
                 if self.TIMING and self.response_elapsed() > 10:
                     break
@@ -613,7 +639,7 @@ class DebuggerInter():
 
             self.busy_bus.stop()
             self.busy_bus.grid_forget()
-            self.read_button.config(state = "normal")
+            self.s_read_button.config(state = "normal")
 
         if mode == "1":
             self.command_var.set("LOAD ADDRESS")
@@ -637,7 +663,7 @@ class DebuggerInter():
 
     def process_s_write_button(self):
         self.progress["value"] = 0
-        self.progress["maximum"] = 4
+        self.progress["maximum"] = 3
 
         address = self.write_address_var.get()
         data = self.data_var.get()
@@ -645,35 +671,49 @@ class DebuggerInter():
         #use existing advacned mode abstraction
         def helper():
             self.progress_var.set("Status: Busy")
-            self.processApplyButton()
             self.progress["value"] += 1
-
-            time.sleep(0.1)
+            self.processApplyButton()
             send_text = self.tx_text.get("1.0", "end")
-            receive_text =  self.rx_text.get("1.0", "end")
-
             if "Please Check" in send_text:
                 self.progress_var.set("Status: Please Check the Address/Data Format")
                 self.progress["value"] = 0
                 return False
-            elif send_text.lower() == receive_text.lower():
-                self.progress["value"] += 1
-                return True
-            else:
-                self.progress_var.set("Status: Unknown Error")
+            return True
+
+        def worker():
+            self.s_write_button.config(state = "disabled")
+
+            #wait for data to arrive
+            while not self.flush_done:
+                if self.TIMING and self.response_elapsed() > 10:
+                    self.progress_var.set("Status: No Response")
+                    self.progress["value"] = 0
+                    return
+                time.sleep(0.5)
+
+            receive_text = self.rx_text.get("1.0", "end")
+            if "Please Check" in receive_text:
+                self.progress_var.set("Status: Error Occurred")
                 self.progress["value"] = 0
-                return False
+                return
+            self.progress["value"] += 1
+
+            #complete
+            self.progress_var.set("Status: Complete")
+            self.s_write_button.config(state = "normal")
 
         self.command_var.set("LOAD ADDRESS")
         self.entry_box_var.set(address)
         if not helper():
             return
+
         self.command_var.set("LOAD DATA")
         self.entry_box_var.set(data)
         if not helper():
             return
-        #complete
-        self.progress_var.set("Status: Complete")
+
+        self.current_worker = threading.Thread(target = worker)
+        self.current_worker.start()
 
     #range address mode
     def add_range_command_widgets(self):
@@ -708,9 +748,6 @@ class DebuggerInter():
         self.RANGE_MODE = False
 
     def to_hexdump(self, canonical: bool):
-        if self.raw_data == '':
-            self.raw_data = self.rx_text.get('1.0', "end-1c")
-
         if (self.RANGE_MODE) and (len(self.raw_data) != 0):
             hexdump = []
             index = 0 # initial index to traverse raw_data
